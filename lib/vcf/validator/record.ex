@@ -252,7 +252,7 @@ defmodule VCF.Validator.Record do
     do: is_integer(value) and value >= -2_147_483_648 and value <= 2_147_483_647
 
   defp valid_numeric_range?(value, :float, _minor) when is_number(value),
-    do: abs(value) <= 3.4028235e38
+    do: abs(value) <= 3.402_823_5e38
 
   defp valid_numeric_range?(value, :float, _minor),
     do: value in [:nan, :positive_infinity, :negative_infinity]

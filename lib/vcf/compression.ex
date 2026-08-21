@@ -84,15 +84,8 @@ defmodule VCF.Compression do
 
   defp start_gzip(%{buffer: buffer} = state) do
     z = :zlib.open()
-
-    try do
-      :ok = :zlib.inflateInit(z, 47)
-      inflate_chunk(buffer, %{state | mode: :gzip, buffer: <<>>, z: z})
-    catch
-      kind, reason ->
-        :zlib.close(z)
-        fail(%{state | z: nil}, {kind, reason}, buffer)
-    end
+    :ok = :zlib.inflateInit(z, 47)
+    inflate_chunk(buffer, %{state | mode: :gzip, buffer: <<>>, z: z})
   end
 
   defp inflate_chunk(chunk, %{z: z} = state) do
@@ -112,9 +105,6 @@ defmodule VCF.Compression do
 
       {:finished, inflated} ->
         {IO.iodata_to_binary([output, inflated]), :finished}
-
-      {:need_dictionary, _checksum, inflated} ->
-        throw({:need_dictionary, IO.iodata_to_binary([output, inflated])})
     end
   end
 
@@ -130,7 +120,7 @@ defmodule VCF.Compression do
         {[], state}
 
       {:ok, size} ->
-        <<block::binary-size(size), rest::binary>> = buffer
+        {block, rest} = :erlang.split_binary(buffer, size)
 
         try do
           output = :zlib.gunzip(block)
@@ -173,7 +163,7 @@ defmodule VCF.Compression do
 
   defp find_bgzf_size(<<_id::binary-size(2), length::little-16, rest::binary>>)
        when byte_size(rest) >= length do
-    <<_value::binary-size(length), remaining::binary>> = rest
+    {_value, remaining} = :erlang.split_binary(rest, length)
     find_bgzf_size(remaining)
   end
 
@@ -206,11 +196,7 @@ defmodule VCF.Compression do
   defp close_decoder(%{z: nil}), do: :ok
 
   defp close_decoder(%{z: z}) do
-    try do
-      :zlib.close(z)
-    catch
-      _kind, _reason -> :ok
-    end
+    :zlib.close(z)
   end
 
   defp fail(state, reason, value) do
@@ -219,9 +205,7 @@ defmodule VCF.Compression do
   end
 
   defp normalize_reason({_kind, reason}) when is_atom(reason), do: reason
-  defp normalize_reason({reason, _detail}) when is_atom(reason), do: reason
   defp normalize_reason(reason) when is_atom(reason), do: reason
-  defp normalize_reason(_reason), do: :invalid_compressed_data
 
   defp split_lines(decoded, max_line_bytes) do
     decoded
@@ -240,11 +224,7 @@ defmodule VCF.Compression do
         {[], {<<>>, false}}
 
       :vcf_lines_eof, {carry, false} ->
-        if byte_size(carry) <= max_line_bytes do
-          {[{:ok, carry}], {<<>>, false}}
-        else
-          line_too_long(max_line_bytes)
-        end
+        {[{:ok, carry}], {<<>>, false}}
     end)
   end
 

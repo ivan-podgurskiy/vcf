@@ -127,6 +127,106 @@ defmodule VCF.Validator.RecordTest do
            ]
   end
 
+  test "validates PASS placement and declared filters independently" do
+    declared = %Metadata{key: "FILTER", value: [{"ID", "q10"}], raw: ""}
+    header = header(5, [declared], [])
+
+    record = %Record{
+      chrom: "chr1",
+      pos: 1,
+      ref: "A",
+      filter: ["PASS", "missing", "q10"]
+    }
+
+    assert [
+             %VCF.Error{field: :filter, key: "PASS", reason: :pass_must_be_standalone},
+             %VCF.Error{field: :filter, key: "missing", reason: :undeclared_field}
+           ] = Validator.validate_record(record, header)
+  end
+
+  test "validates sample counts and FORMAT values without genotypes" do
+    metadata = [
+      definition("FORMAT", "GT", 1, :string),
+      definition("FORMAT", "CH", 1, :character),
+      definition("FORMAT", "F", 1, :float)
+    ]
+
+    sample = %Sample{
+      name: "S1",
+      values: [
+        %Field{key: "GT", value: "raw"},
+        %Field{key: "CH", value: "too long"},
+        %Field{key: "F", value: :negative_infinity},
+        %Field{key: "UNKNOWN", value: "kept"}
+      ]
+    }
+
+    record = %Record{
+      chrom: "chr1",
+      pos: 1,
+      ref: "A",
+      alt: ["C"],
+      format: ["GT", "CH", "F", "UNKNOWN"],
+      samples: [sample]
+    }
+
+    errors = Validator.validate_record(record, header(5, metadata, ["S1", "S2"]))
+    assert Enum.any?(errors, &(&1.reason == :sample_count_mismatch))
+    assert Enum.any?(errors, &(&1.key == "UNKNOWN" and &1.reason == :undeclared_field))
+    assert Enum.any?(errors, &(&1.key == "CH" and &1.reason == :invalid_type))
+
+    without_gt = %{sample | values: [%Field{key: "F", value: 1.0}]}
+    without_gt_record = %{record | format: ["F"], samples: [without_gt]}
+    assert [] = Validator.validate_record(without_gt_record, header(5, metadata, ["S1"]))
+  end
+
+  test "accepts special qualities and reports float ranges and fallback type errors" do
+    metadata = [
+      definition("INFO", "F", 1, :float),
+      definition("INFO", "S", 1, :string),
+      definition("INFO", "C", 1, :character)
+    ]
+
+    valid = %Record{
+      chrom: "chr1",
+      pos: 1,
+      ref: "A",
+      qual: :nan,
+      info: [
+        %Field{key: "F", value: :negative_infinity},
+        %Field{key: "S", value: "text"},
+        %Field{key: "C", value: "x"}
+      ]
+    }
+
+    assert [] = Validator.validate_record(valid, header(5, metadata, []))
+
+    assert [] =
+             Validator.validate_record(
+               %{valid | qual: :positive_infinity},
+               header(5, metadata, [])
+             )
+
+    invalid = %{
+      valid
+      | info: [
+          %Field{key: "F", value: 3.5e38},
+          %Field{key: "S", value: %{}},
+          %Field{key: "C", value: "xx"}
+        ]
+    }
+
+    errors = Validator.validate_record(invalid, header(5, metadata, []))
+    assert Enum.any?(errors, &(&1.key == "F" and &1.reason == :float_out_of_range))
+    assert Enum.count(errors, &(&1.reason == :invalid_type)) == 2
+
+    unknown_type = [definition("INFO", "U", 1, :unknown)]
+    unknown_record = %{valid | info: [%Field{key: "U", value: "value"}]}
+
+    assert [%VCF.Error{key: "U", reason: :invalid_type}] =
+             Validator.validate_record(unknown_record, header(5, unknown_type, []))
+  end
+
   defp header(minor, metadata, samples) do
     %Header{
       version: %Version{major: 4, minor: minor},

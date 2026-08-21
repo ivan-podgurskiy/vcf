@@ -3,9 +3,9 @@ defmodule VCF.Stream do
 
   alias VCF.Error
   alias VCF.Header
+  alias VCF.ParseError
   alias VCF.Parser.Header, as: HeaderParser
   alias VCF.Parser.Record, as: RecordParser
-  alias VCF.ParseError
   alias VCF.Source
   alias VCF.Validator
   alias VCF.Warning
@@ -86,7 +86,6 @@ defmodule VCF.Stream do
 
         {:ok, header, continuation, line_number}
       else
-        {:ok, _header, _remaining} -> header_error(line_number, :unexpected_header_remainder)
         {:error, error} -> {:error, error}
       end
     else
@@ -105,18 +104,14 @@ defmodule VCF.Stream do
     {:error, error}
   end
 
-  defp collect_header({:done, _accumulator}, lines, line_number, _source, mode) do
+  defp collect_header({status, _accumulator}, lines, line_number, _source, mode)
+       when status in [:done, :halted] do
     finalize_incomplete_header(lines, line_number, mode)
   end
 
-  defp collect_header({:halted, _accumulator}, lines, line_number, _source, mode) do
-    finalize_incomplete_header(lines, line_number, mode)
-  end
-
-  defp finalize_incomplete_header(lines, line_number, mode) do
+  defp finalize_incomplete_header(lines, _line_number, mode) do
     case HeaderParser.parse(Enum.reverse(lines), mode: mode) do
       {:error, error} -> {:error, error}
-      {:ok, _header, _remaining} -> header_error(line_number, :missing_column_header)
     end
   end
 
@@ -199,8 +194,7 @@ defmodule VCF.Stream do
         {:continuation, next} ->
           case next.({:cont, nil}) do
             {:suspended, item, following} -> {[item], {:continuation, following}}
-            {:done, _accumulator} -> {:halt, :done}
-            {:halted, _accumulator} -> {:halt, :done}
+            {status, _accumulator} when status in [:done, :halted] -> {:halt, :done}
           end
       end,
       fn
@@ -235,10 +229,6 @@ defmodule VCF.Stream do
        value: mode,
        reason: :expected_strict_or_permissive
      }}
-  end
-
-  defp header_error(line, reason) do
-    {:error, %Error{kind: :invalid_header, line: line, field: :header, reason: reason}}
   end
 
   defp trim_line_ending(line) do

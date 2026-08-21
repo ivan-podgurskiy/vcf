@@ -105,7 +105,6 @@ defmodule VCF.Parser.Metadata do
   end
 
   defp split_attributes(<<>>, _current, _parts, true, _escaped), do: {:error, :unterminated_quote}
-  defp split_attributes(<<>>, _current, _parts, _quoted, true), do: {:error, :unterminated_quote}
   defp split_attributes(<<>>, _current, _parts, _quoted, _escaped), do: {:error, :empty_structure}
 
   defp split_attributes(<<character::utf8, rest::binary>>, current, parts, quoted, true) do

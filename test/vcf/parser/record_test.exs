@@ -134,6 +134,65 @@ defmodule VCF.Parser.RecordTest do
     assert Field.get(info, "X") == "kept"
   end
 
+  test "reports invalid positions, alternates, quality, and INFO syntax" do
+    header = sites_header()
+
+    for {line, reason} <- [
+          {"1\tbad\t.\tA\tC\t.\tPASS\t.\n", :expected_integer},
+          {"1\t1\t.\tA\t<>\t.\tPASS\t.\n", :invalid_allele},
+          {"1\t1\t.\tA\tC\tbad\tPASS\t.\n", :expected_float},
+          {"1\t1\t.\tA\tC\t.\tPASS\t;\n", :invalid_info}
+        ] do
+      assert {:error, %Error{reason: ^reason}} = RecordParser.parse(line, 9, header)
+    end
+  end
+
+  test "handles missing samples, invalid genotypes, undeclared missing values, and percent escapes" do
+    header = sample_header()
+
+    assert {:ok, %{samples: [%Sample{values: first_values} | _rest]}} =
+             RecordParser.parse(
+               "1\t1\t.\tA\tC\t.\tPASS\t.\tGT:GQ:AD\t.\t0/0:5:4,0\n",
+               10,
+               header
+             )
+
+    assert %Genotype{alleles: [nil]} = Field.get(first_values, "GT")
+
+    assert {:error, %Error{field: :format, key: "GT", reason: :invalid_syntax}} =
+             RecordParser.parse(
+               "1\t1\t.\tA\tC\t.\tPASS\t.\tGT\tbad\t0/0\n",
+               11,
+               header
+             )
+
+    unknown_header =
+      parse_header!([
+        {1, "##fileformat=VCFv4.5\n"},
+        {2, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\tS1\n"}
+      ])
+
+    assert {:ok, %{info: info, samples: [%Sample{values: values}]}} =
+             RecordParser.parse(
+               "1\t1\t.\tA\tC\t.\tPASS\tX=.;TEXT=%2C%2c%ZZ\tU\t.\n",
+               12,
+               unknown_header
+             )
+
+    assert Field.get(info, "X") == nil
+    assert Field.get(info, "TEXT") == ",,%ZZ"
+    assert Field.get(values, "U") == nil
+  end
+
+  test "rejects an INFO flag without a value when its declaration is not Flag" do
+    assert {:error, %Error{field: :info, key: "DP", reason: :expected_integer}} =
+             RecordParser.parse(
+               "1\t1\t.\tA\tC\t.\tPASS\tDP\tGT\t0/0\t0/0\n",
+               13,
+               sample_header()
+             )
+  end
+
   defp sites_header do
     parse_header!([
       {1, "##fileformat=VCFv4.5\n"},

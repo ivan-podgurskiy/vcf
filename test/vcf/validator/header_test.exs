@@ -73,6 +73,15 @@ defmodule VCF.Validator.HeaderTest do
     assert [] = Validator.validate_header(header(3, [meta]))
   end
 
+  test "validates empty and duplicate sample names in programmatic headers" do
+    invalid = %{header(5, []) | samples: ["", "S1", "S1"]}
+
+    assert [
+             %VCF.Error{reason: :empty_sample},
+             %VCF.Error{reason: :duplicate_sample}
+           ] = Validator.validate_header(invalid)
+  end
+
   defp header(minor, metadata) do
     %Header{
       version: %Version{major: 4, minor: minor},

@@ -27,5 +27,7 @@ defmodule VCF.Validator.CardinalityTest do
   test "rejects missing context and invalid counts" do
     assert {:error, :missing_cardinality_context} = Cardinality.validate(1, :g, [])
     assert {:error, :invalid_cardinality} = Cardinality.validate(-1, :variable)
+    assert {:error, :invalid_cardinality} = Cardinality.validate(1, :unknown)
+    assert :ok = Cardinality.validate(1, :g, alt_count: 2, ploidy: 0)
   end
 end

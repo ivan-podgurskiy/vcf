@@ -112,4 +112,38 @@ defmodule VCF.Parser.HeaderTest do
     assert %{key: "contig"} = Header.definition(header, :contig, "chr1")
     assert Header.definition(header, :info, "missing") == nil
   end
+
+  test "reports incomplete headers, records before columns, empty samples, and raw duplicate IDs" do
+    assert {:error, %Error{reason: :required}} =
+             HeaderParser.parse([{1, "##fileformat=VCFv4.5\n"}])
+
+    assert {:error, %Error{reason: :required_before_records}} =
+             HeaderParser.parse([
+               {1, "##fileformat=VCFv4.5\n"},
+               {2, "chr1\t1\t.\tA\tC\t.\tPASS\t.\n"}
+             ])
+
+    assert {:error, %Error{reason: :empty_sample}} =
+             HeaderParser.parse([
+               {1, "##fileformat=VCFv4.5\n"},
+               {2, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\tFORMAT\t\n"}
+             ])
+
+    assert {:ok, _header, []} =
+             HeaderParser.parse([
+               {1, "##fileformat=VCFv4.5\n"},
+               {2, "##META=<Description=x>\n"},
+               {3, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"}
+             ])
+
+    duplicate = [
+      {1, "##fileformat=VCFv4.5\n"},
+      {2, "##FILTER=<ID=q10,Description=one>\n"},
+      {3, "##FILTER=<ID=q10,Description=two>\n"},
+      {4, "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"}
+    ]
+
+    assert {:error, %Error{reason: :duplicate_definition, key: "q10"}} =
+             HeaderParser.parse(duplicate)
+  end
 end

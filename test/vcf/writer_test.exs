@@ -105,6 +105,10 @@ defmodule VCF.WriterTest do
              VCF.encode(%{document | records: [invalid]}, validate: false)
   end
 
+  test "returns a structured error when the destination device cannot be written" do
+    assert {:error, %VCF.Error{kind: :write_error}} = VCF.write(:missing_device, document())
+  end
+
   defp document do
     info = %FieldDefinition{id: "AC", number: :a, type: :integer, description: "Allele count"}
     gt = %FieldDefinition{id: "GT", number: 1, type: :string, description: "Genotype"}

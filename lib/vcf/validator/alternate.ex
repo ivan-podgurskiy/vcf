@@ -39,11 +39,13 @@ defmodule VCF.Validator.Alternate do
         false
 
       {index, 1} ->
-        <<prefix::binary-size(index), bracket::binary-size(1), rest::binary>> = allele
+        {prefix, bracket_and_rest} = :erlang.split_binary(allele, index)
+        <<bracket::binary-size(1), rest::binary>> = bracket_and_rest
 
         case :binary.match(rest, bracket) do
           {remote_size, 1} ->
-            <<remote::binary-size(remote_size), _closing::binary-size(1), suffix::binary>> = rest
+            {remote, closing_and_suffix} = :erlang.split_binary(rest, remote_size)
+            <<_closing::binary-size(1), suffix::binary>> = closing_and_suffix
             local = prefix <> suffix
 
             prefix == "" != (suffix == "") and

@@ -79,7 +79,6 @@ defmodule VCF.Genotype do
 
   defp parse_phase(""), do: {:ok, nil}
   defp parse_phase(separator) when separator in ["/", "|"], do: {:ok, phase(separator)}
-  defp parse_phase(_separator), do: :error
 
   defp phase("/"), do: :unphased
   defp phase("|"), do: :phased

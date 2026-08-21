@@ -91,4 +91,36 @@ defmodule VCF.Parser.MetadataTest do
     assert {:error, %{__struct__: Error, reason: :missing_attribute_value}} =
              MetadataParser.parse("##contig=<ID>", 10, :strict)
   end
+
+  test "reports every malformed metadata boundary" do
+    for line <- ["source=x", "##=x"] do
+      assert {:error, %Error{reason: :invalid_syntax}} = MetadataParser.parse(line, 1, :strict)
+    end
+
+    assert {:error, %Error{reason: :unterminated_structure}} =
+             MetadataParser.parse("##contig=<ID=x", 2, :strict)
+
+    assert {:error, %Error{reason: :missing_id}} =
+             MetadataParser.parse(
+               ~s(##INFO=<Number=1,Type=Integer,Description="missing">),
+               3,
+               :strict
+             )
+
+    assert {:ok, %{value: %{number: nil, type: nil}}, []} =
+             MetadataParser.parse(~s(##INFO=<ID=X,Description="incomplete">), 4, :strict)
+
+    assert {:error, %Error{reason: :invalid_type}} =
+             MetadataParser.parse(
+               ~s(##INFO=<ID=X,Number=1,Type=Unknown,Description="bad">),
+               5,
+               :strict
+             )
+
+    assert {:error, %Error{reason: :empty_structure}} =
+             MetadataParser.parse("##contig=<>", 6, :strict)
+
+    assert {:error, %Error{reason: :unterminated_quote}} =
+             MetadataParser.parse(~s(##contig=<ID="x"suffix>), 7, :strict)
+  end
 end

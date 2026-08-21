@@ -33,4 +33,11 @@ defmodule VCF.Parser.ValueTest do
     assert {:error, %{__struct__: Error, reason: :flag_has_value}} =
              Value.parse("yes", :flag)
   end
+
+  test "accepts explicit positive infinity and stops a list on its first invalid item" do
+    assert {:ok, :positive_infinity} = Value.parse("+Inf", :float)
+
+    assert {:error, %Error{reason: :expected_integer, value: "bad"}} =
+             Value.parse_list("1,bad,3", :integer)
+  end
 end

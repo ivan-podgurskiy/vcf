@@ -55,4 +55,52 @@ defmodule VCF.StreamTest do
     assert Enum.map(stream, & &1.pos) == [7]
     assert Enum.map(stream, & &1.pos) == [7]
   end
+
+  test "propagates compression errors from header and record input" do
+    assert {:error, %VCF.Error{kind: :compression_error, reason: :invalid_chunk}} =
+             VCFStream.open([:not_binary])
+
+    assert {:ok, stream} = VCFStream.open(@header ++ [:not_binary])
+
+    assert [{:error, %VCF.Error{kind: :compression_error, reason: :invalid_chunk}}] =
+             Enum.to_list(stream)
+  end
+
+  test "reports incomplete headers and strict validation failures" do
+    assert {:error, %VCF.Error{field: :header}} =
+             VCFStream.open(["##fileformat=VCFv4.5\n"])
+
+    invalid_header = [
+      "##fileformat=VCFv4.1\n",
+      ~s(##INFO=<ID=AD,Number=R,Type=Integer,Description="depths">\n),
+      "#CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO\n"
+    ]
+
+    assert {:error, %VCF.Error{reason: :unsupported_number}} = VCFStream.open(invalid_header)
+
+    assert {:ok, permissive} = VCFStream.open(invalid_header, mode: :permissive)
+    assert [%VCF.Warning{reason: :unsupported_number}] = permissive.header.warnings
+  end
+
+  test "strict records stop on validation errors while permissive records retain warnings" do
+    source = @header ++ ["chr1\t0\t.\tA\tC\t.\tPASS\t.\n"]
+
+    assert {:ok, strict} = VCFStream.open(source)
+    assert [{:error, %VCF.Error{reason: :must_be_positive}}] = Enum.to_list(strict)
+
+    assert {:ok, permissive} = VCFStream.open(source, mode: :permissive)
+
+    assert [{:ok, %VCF.Record{warnings: [%VCF.Warning{reason: :must_be_positive}]}}] =
+             Enum.to_list(permissive)
+  end
+
+  test "one-shot record continuations report a second enumeration explicitly" do
+    assert {:ok, stream} =
+             VCFStream.open(@header ++ ["chr1\t1\t.\tA\tC\t.\tPASS\t.\n"])
+
+    assert [{:ok, %VCF.Record{pos: 1}}] = Enum.to_list(stream)
+
+    assert [{:error, %VCF.Error{kind: :source_error, reason: :already_consumed}}] =
+             Enum.to_list(stream)
+  end
 end

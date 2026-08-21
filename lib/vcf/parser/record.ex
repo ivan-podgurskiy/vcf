@@ -46,7 +46,6 @@ defmodule VCF.Parser.Record do
       {:ok, decode_percent_values(record, header.version)}
     else
       {:error, %Error{} = error} -> {:error, error}
-      _failure -> record_error(line_number, :record, raw, :invalid_field_count)
     end
   end
 
@@ -166,10 +165,6 @@ defmodule VCF.Parser.Record do
       error ->
         error
     end
-  end
-
-  defp parse_sample(name, ".", keys, header, line, mode) do
-    parse_sample(name, Enum.map_join(keys, ":", fn _key -> "." end), keys, header, line, mode)
   end
 
   defp parse_sample(name, raw_values, keys, header, line, mode) do

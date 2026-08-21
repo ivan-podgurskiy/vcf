@@ -398,21 +398,8 @@ defmodule VCF.Writer do
 
   defp open_compressor(:gzip) do
     z = :zlib.open()
-
-    try do
-      :ok = :zlib.deflateInit(z, :default, :deflated, 31, 8, :default)
-      {:ok, z}
-    catch
-      kind, reason ->
-        :zlib.close(z)
-
-        {:error,
-         %Error{
-           kind: :write_error,
-           value: {kind, reason},
-           reason: :compression_init_failed
-         }}
-    end
+    :ok = :zlib.deflateInit(z, :default, :deflated, 31, 8, :default)
+    {:ok, z}
   end
 
   defp invalid_compression(compression) do
@@ -429,47 +416,32 @@ defmodule VCF.Writer do
     do: write_device(device, data)
 
   defp sink_write(%{compression: :gzip, device: device, z: z}, data) do
-    try do
-      z |> :zlib.deflate(data) |> then(&write_device(device, &1))
-    catch
-      kind, reason ->
-        {:error, %Error{kind: :write_error, value: {kind, reason}, reason: :compression_failed}}
-    end
+    z |> :zlib.deflate(data) |> then(&write_device(device, &1))
   end
 
   defp finish_sink(%{compression: :none}), do: :ok
 
   defp finish_sink(%{compression: :gzip, device: device, z: z}) do
-    try do
-      with :ok <- z |> :zlib.deflate(<<>>, :finish) |> then(&write_device(device, &1)),
-           :ok <- :zlib.deflateEnd(z) do
-        :zlib.close(z)
-      end
-    catch
-      kind, reason ->
-        {:error,
-         %Error{
-           kind: :write_error,
-           value: {kind, reason},
-           reason: :compression_finish_failed
-         }}
+    with :ok <- z |> :zlib.deflate(<<>>, :finish) |> then(&write_device(device, &1)),
+         :ok <- :zlib.deflateEnd(z) do
+      :zlib.close(z)
     end
   end
 
   defp write_device(device, data) do
-    case IO.binwrite(device, data) do
-      :ok -> :ok
-      {:error, reason} -> {:error, %Error{kind: :write_error, value: device, reason: reason}}
+    device = Map.get(%{stdio: :standard_io, stderr: :standard_error}, device, device)
+
+    case :file.write(device, data) do
+      :ok ->
+        :ok
+
+      {:error, reason} ->
+        {:error, %Error{kind: :write_error, value: device, reason: reason}}
     end
   end
 
   defp abort_sink(%{compression: :gzip, z: z} = sink) do
-    try do
-      :zlib.close(z)
-    catch
-      _kind, _reason -> :ok
-    end
-
+    :zlib.close(z)
     close_owned_device(sink)
     remove_failed_path(sink)
   end

@@ -54,7 +54,13 @@ defmodule VCF.Source do
   end
 
   defp chunks(%__MODULE__{kind: :path, value: path, options: options}) do
-    File.stream!(path, [:raw, :binary], Keyword.get(options, :chunk_bytes, 65_536))
+    chunk_bytes = Keyword.get(options, :chunk_bytes, 65_536)
+
+    Stream.resource(
+      fn -> File.open!(path, [:read, :raw, :binary]) end,
+      &read_chunk(&1, chunk_bytes, path),
+      &File.close/1
+    )
   end
 
   defp chunks(%__MODULE__{kind: :device, value: device, options: options}) do
@@ -62,6 +68,14 @@ defmodule VCF.Source do
   end
 
   defp chunks(%__MODULE__{kind: :enumerable, value: enumerable}), do: enumerable
+
+  defp read_chunk(device, chunk_bytes, path) do
+    case :file.read(device, chunk_bytes) do
+      {:ok, data} -> {[data], device}
+      :eof -> {:halt, device}
+      {:error, reason} -> raise File.Error, reason: reason, action: "stream data from", path: path
+    end
+  end
 
   defp new(kind, value, options, reusable?) do
     %__MODULE__{

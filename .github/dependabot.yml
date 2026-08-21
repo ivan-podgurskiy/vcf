@@ -1,0 +1,40 @@
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    labels:
+      - dependencies
+      - security
+      - automated-pr
+    groups:
+      github-actions-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
+
+  - package-ecosystem: mix
+    directory: /
+    schedule:
+      interval: monthly
+    labels:
+      - dependencies
+      - security
+      - automated-pr
+    # Keep updates compatible with the declared Elixir ~> 1.14 floor.
+    ignore:
+      - dependency-name: earmark_parser
+      - dependency-name: ex_doc
+      - dependency-name: "*"
+        update-types: ["version-update:semver-major"]
+    groups:
+      mix-minor-patch:
+        patterns:
+          - "*"
+        update-types:
+          - minor
+          - patch
