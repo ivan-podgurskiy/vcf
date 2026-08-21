@@ -106,14 +106,19 @@ defmodule VCF.Stream do
   end
 
   defp collect_header({:done, _accumulator}, lines, line_number, _source, mode) do
+    finalize_incomplete_header(lines, line_number, mode)
+  end
+
+  defp collect_header({:halted, _accumulator}, lines, line_number, _source, mode) do
+    finalize_incomplete_header(lines, line_number, mode)
+  end
+
+  defp finalize_incomplete_header(lines, line_number, mode) do
     case HeaderParser.parse(Enum.reverse(lines), mode: mode) do
       {:error, error} -> {:error, error}
       {:ok, _header, _remaining} -> header_error(line_number, :missing_column_header)
     end
   end
-
-  defp collect_header({:halted, _accumulator}, _lines, line_number, _source, _mode),
-    do: header_error(line_number, :source_halted)
 
   defp validate_header(header, :strict) do
     case Validator.validate_header(header) do
@@ -164,7 +169,13 @@ defmodule VCF.Stream do
   defp validated_record(_record, [error | _rest], :strict), do: {[{:error, error}], true}
 
   defp validated_record(record, errors, :permissive) do
-    warnings = Enum.map(errors, &warning_from_error/1)
+    warned_fields = MapSet.new(record.warnings, &{&1.field, &1.key})
+
+    warnings =
+      errors
+      |> Enum.reject(&MapSet.member?(warned_fields, {&1.field, &1.key}))
+      |> Enum.map(&warning_from_error/1)
+
     {[{:ok, %{record | warnings: record.warnings ++ warnings}}], false}
   end
 
