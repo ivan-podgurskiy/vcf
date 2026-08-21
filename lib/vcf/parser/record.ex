@@ -43,7 +43,7 @@ defmodule VCF.Parser.Record do
         raw: raw
       }
 
-      {:ok, record}
+      {:ok, decode_percent_values(record, header.version)}
     else
       {:error, %Error{} = error} -> {:error, error}
       _failure -> record_error(line_number, :record, raw, :invalid_field_count)
@@ -256,6 +256,50 @@ defmodule VCF.Parser.Record do
   defp parse_filter("PASS"), do: :pass
   defp parse_filter("."), do: nil
   defp parse_filter(value), do: String.split(value, ";", trim: false)
+
+  defp decode_percent_values(record, %VCF.Version{minor: minor}) when minor >= 3 do
+    info = Enum.map(record.info, &decode_percent_field/1)
+
+    samples =
+      Enum.map(record.samples, fn sample ->
+        %{sample | values: Enum.map(sample.values, &decode_percent_field/1)}
+      end)
+
+    %{record | info: info, samples: samples}
+  end
+
+  defp decode_percent_values(record, _version), do: record
+
+  defp decode_percent_field(%Field{value: value} = field),
+    do: %{field | value: decode_percent_value(value)}
+
+  defp decode_percent_value(value) when is_binary(value), do: percent_decode(value, <<>>)
+
+  defp decode_percent_value(values) when is_list(values),
+    do: Enum.map(values, &decode_percent_value/1)
+
+  defp decode_percent_value(value), do: value
+
+  defp percent_decode(<<>>, decoded), do: decoded
+
+  defp percent_decode(<<?%, high, low, rest::binary>> = value, decoded) do
+    with {:ok, high_value} <- hex_value(high),
+         {:ok, low_value} <- hex_value(low) do
+      percent_decode(rest, <<decoded::binary, high_value * 16 + low_value>>)
+    else
+      :error ->
+        <<character, remaining::binary>> = value
+        percent_decode(remaining, <<decoded::binary, character>>)
+    end
+  end
+
+  defp percent_decode(<<character, rest::binary>>, decoded),
+    do: percent_decode(rest, <<decoded::binary, character>>)
+
+  defp hex_value(character) when character in ?0..?9, do: {:ok, character - ?0}
+  defp hex_value(character) when character in ?A..?F, do: {:ok, character - ?A + 10}
+  defp hex_value(character) when character in ?a..?f, do: {:ok, character - ?a + 10}
+  defp hex_value(_character), do: :error
 
   defp record_error(line, field, value, reason) do
     {:error,

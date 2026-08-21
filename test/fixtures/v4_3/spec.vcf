@@ -1,0 +1,5 @@
+##fileformat=VCFv4.3
+##META=<ID=Assay,Type=String,Number=.>
+##INFO=<ID=NOTE,Number=1,Type=String,Description="Encoded note">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	3	id_3	G	<*>	.	PASS	NOTE=a%3Bb%3Dc%25

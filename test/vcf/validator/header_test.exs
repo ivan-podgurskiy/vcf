@@ -45,6 +45,34 @@ defmodule VCF.Validator.HeaderTest do
     assert [] = Validator.validate_header(header(5, [format_p, format_la]))
   end
 
+  test "enforces the 4.2 trailing INFO attributes and 4.3 META boundaries" do
+    info =
+      %Metadata{
+        key: "INFO",
+        line: 2,
+        raw: "",
+        value: %FieldDefinition{
+          id: "DP",
+          number: 1,
+          type: :integer,
+          description: "Depth",
+          attributes: [{"Source", "fixture"}]
+        }
+      }
+
+    meta = %Metadata{key: "META", line: 3, raw: "", value: [{"ID", "Assay"}]}
+
+    assert [%VCF.Error{reason: :unsupported_attributes}] =
+             Validator.validate_header(header(1, [info]))
+
+    assert [] = Validator.validate_header(header(2, [info]))
+
+    assert [%VCF.Error{reason: :unsupported_metadata}] =
+             Validator.validate_header(header(2, [meta]))
+
+    assert [] = Validator.validate_header(header(3, [meta]))
+  end
+
   defp header(minor, metadata) do
     %Header{
       version: %Version{major: 4, minor: minor},

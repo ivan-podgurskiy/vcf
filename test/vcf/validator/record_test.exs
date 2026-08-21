@@ -93,6 +93,25 @@ defmodule VCF.Validator.RecordTest do
     assert [] = Validator.validate_record(record, header(5, metadata, []))
   end
 
+  test "applies VCF 4.3 contig-name and 32-bit Integer restrictions" do
+    metadata = [definition("INFO", "BIG", 1, :integer)]
+
+    record = %Record{
+      chrom: "chr1:part",
+      pos: 1,
+      ref: "A",
+      alt: ["C"],
+      info: [%Field{key: "BIG", value: 2_147_483_648}]
+    }
+
+    assert [] = Validator.validate_record(record, header(2, metadata, []))
+
+    assert [
+             %VCF.Error{field: :chrom, reason: :invalid_contig_name},
+             %VCF.Error{field: :info, key: "BIG", reason: :integer_out_of_range}
+           ] = Validator.validate_record(record, header(3, metadata, []))
+  end
+
   test "accumulates header and record errors in document order" do
     header = header(5, [], [])
     first = %Record{chrom: "", pos: 0, ref: "A", line: 8}

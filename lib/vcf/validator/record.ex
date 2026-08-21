@@ -13,16 +13,24 @@ defmodule VCF.Validator.Record do
 
   @spec validate(Record.t(), Header.t(), module()) :: [Error.t()]
   def validate(%Record{} = record, %Header{} = header, profile) do
-    validate_fixed(record) ++
+    validate_fixed(record, profile) ++
       validate_alternates(record, profile) ++
       validate_filters(record, header) ++
-      validate_info(record, header) ++
+      validate_info(record, header, profile) ++
       validate_format(record, header, profile)
   end
 
-  defp validate_fixed(record) do
+  defp validate_fixed(record, profile) do
     []
     |> add_unless(record.chrom != "", record, :chrom, nil, record.chrom, :empty_value)
+    |> add_unless(
+      valid_contig_name?(record.chrom, profile),
+      record,
+      :chrom,
+      nil,
+      record.chrom,
+      :invalid_contig_name
+    )
     |> add_unless(
       is_integer(record.pos) and record.pos > 0,
       record,
@@ -63,11 +71,11 @@ defmodule VCF.Validator.Record do
 
   defp validate_filters(_record, _header), do: []
 
-  defp validate_info(record, header) do
+  defp validate_info(record, header, profile) do
     Enum.flat_map(record.info, fn field ->
       case Header.definition(header, :info, field.key) do
         %FieldDefinition{} = definition ->
-          validate_field(field, definition, record, :info,
+          validate_field(field, definition, record, :info, profile,
             alt_count: length(record.alt),
             ploidy: 2
           )
@@ -122,7 +130,7 @@ defmodule VCF.Validator.Record do
       definition_errors =
         case Header.definition(header, :format, field.key) do
           %FieldDefinition{} = definition ->
-            validate_field(field, definition, record, :format,
+            validate_field(field, definition, record, :format, profile,
               alt_count: length(record.alt),
               ploidy: ploidy,
               local_alt_count: local_alt_count,
@@ -143,9 +151,10 @@ defmodule VCF.Validator.Record do
     end)
   end
 
-  defp validate_field(%Field{value: nil}, _definition, _record, _scope, _options), do: []
+  defp validate_field(%Field{value: nil}, _definition, _record, _scope, _profile, _options),
+    do: []
 
-  defp validate_field(field, definition, record, scope, options) do
+  defp validate_field(field, definition, record, scope, profile, options) do
     type_errors =
       if valid_type?(field.value, definition.type, field.key) do
         []
@@ -159,7 +168,17 @@ defmodule VCF.Validator.Record do
         {:error, reason} -> [error(record, scope, field.key, field.value, reason)]
       end
 
-    type_errors ++ cardinality_errors
+    range_errors =
+      if valid_numeric_range?(field.value, definition.type, profile.minor()) do
+        []
+      else
+        reason =
+          if definition.type == :integer, do: :integer_out_of_range, else: :float_out_of_range
+
+        [error(record, scope, field.key, field.value, reason)]
+      end
+
+    type_errors ++ cardinality_errors ++ range_errors
   end
 
   defp validate_genotype(genotype, record, profile) do
@@ -198,6 +217,10 @@ defmodule VCF.Validator.Record do
 
   defp gt_first?(keys), do: "GT" not in keys or List.first(keys) == "GT"
 
+  defp valid_contig_name?(chrom, profile) do
+    profile.minor() < 3 or chrom == "" or Regex.match?(~r/^[^\s:;,=]+$/u, chrom)
+  end
+
   defp valid_qual?(nil), do: true
   defp valid_qual?(:nan), do: true
   defp valid_qual?(:positive_infinity), do: true
@@ -218,6 +241,23 @@ defmodule VCF.Validator.Record do
   defp valid_type?(value, :character, _key), do: is_binary(value) and String.length(value) == 1
   defp valid_type?(value, :string, _key), do: is_binary(value)
   defp valid_type?(_value, _type, _key), do: false
+
+  defp valid_numeric_range?(_value, _type, minor) when minor < 3, do: true
+  defp valid_numeric_range?(nil, _type, _minor), do: true
+
+  defp valid_numeric_range?(values, type, minor) when is_list(values),
+    do: Enum.all?(values, &valid_numeric_range?(&1, type, minor))
+
+  defp valid_numeric_range?(value, :integer, _minor),
+    do: is_integer(value) and value >= -2_147_483_648 and value <= 2_147_483_647
+
+  defp valid_numeric_range?(value, :float, _minor) when is_number(value),
+    do: abs(value) <= 3.4028235e38
+
+  defp valid_numeric_range?(value, :float, _minor),
+    do: value in [:nan, :positive_infinity, :negative_infinity]
+
+  defp valid_numeric_range?(_value, _type, _minor), do: true
 
   defp value_count(true), do: 0
   defp value_count(values) when is_list(values), do: length(values)

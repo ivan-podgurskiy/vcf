@@ -1,0 +1,7 @@
+##fileformat=VCFv4.5
+##FORMAT=<ID=GT,Number=1,Type=String,Description="Genotype">
+##FORMAT=<ID=LAA,Number=LA,Type=Integer,Description="Local alternate alleles">
+##FORMAT=<ID=LAD,Number=LR,Type=Integer,Description="Local allele depths">
+##FORMAT=<ID=LPL,Number=LG,Type=Integer,Description="Local likelihoods">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO	FORMAT	S1
+chr3	5	.	T	A,C,<NON_REF>	.	PASS	.	GT:LAA:LAD:LPL	0/2:1,2:9,4,2:0,1,2,3,4,5

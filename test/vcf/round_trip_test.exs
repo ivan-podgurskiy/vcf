@@ -22,4 +22,19 @@ defmodule VCF.RoundTripTest do
 
     assert reparsed.records == Enum.map(original.records, &%{&1 | raw: hd(reparsed.records).raw})
   end
+
+  test "writer percent-escapes reserved decoded string characters for VCF 4.3+" do
+    source = """
+    ##fileformat=VCFv4.5
+    ##INFO=<ID=NOTE,Number=1,Type=String,Description="Note">
+    #CHROM\tPOS\tID\tREF\tALT\tQUAL\tFILTER\tINFO
+    chr1\t1\t.\tA\tC\t.\tPASS\tNOTE=a%3Bb%3Dc%25
+    """
+
+    document = VCF.parse!(source)
+    encoded = VCF.encode!(document)
+
+    assert encoded =~ "NOTE=a%3Bb%3Dc%25"
+    assert VCF.parse!(encoded).records == document.records
+  end
 end

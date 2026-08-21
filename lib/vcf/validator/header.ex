@@ -52,6 +52,13 @@ defmodule VCF.Validator.Header do
         :unsupported_number
       )
       |> append_if(
+        profile.minor() == 1 and scope == :info and definition.attributes != [],
+        entry,
+        scope,
+        definition,
+        :unsupported_attributes
+      )
+      |> append_if(
         definition.type == :flag and definition.number != 0,
         entry,
         scope,
@@ -84,6 +91,12 @@ defmodule VCF.Validator.Header do
 
         errors =
           []
+          |> append_structured_if(
+            key == "META" and profile.minor() < 3,
+            entry,
+            id,
+            :unsupported_metadata
+          )
           |> append_structured_if(
             profile.minor() >= 3 and MapSet.member?(seen, identity),
             entry,

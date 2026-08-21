@@ -37,7 +37,7 @@ defmodule VCF.Writer do
     records = Enum.to_list(records)
 
     with :ok <- validate(header, records, options),
-         {:ok, record_lines} <- encode_records(records) do
+         {:ok, record_lines} <- encode_records(records, header.version) do
       {:ok, IO.iodata_to_binary([encode_header(header), record_lines])}
     end
   end
@@ -94,7 +94,7 @@ defmodule VCF.Writer do
     Enum.reduce_while(records, :ok, fn item, :ok ->
       with {:ok, record} <- normalize_record(item),
            :ok <- validate_record_for_write(record, header, options),
-           {:ok, encoded} <- encode_record(record),
+           {:ok, encoded} <- encode_record(record, header.version),
            :ok <- sink_write(sink, encoded) do
         {:cont, :ok}
       else
@@ -189,25 +189,25 @@ defmodule VCF.Writer do
     "\"" <> escaped <> "\""
   end
 
-  defp encode_records(records) do
+  defp encode_records(records, version) do
     Enum.reduce_while(records, {:ok, []}, fn record, {:ok, lines} ->
-      case encode_record(record) do
+      case encode_record(record, version) do
         {:ok, line} -> {:cont, {:ok, [lines, line]}}
         {:error, error} -> {:halt, {:error, error}}
       end
     end)
   end
 
-  defp encode_record(%Record{} = record) do
-    with {:ok, samples} <- encode_samples(record),
-         {:ok, info} <- encode_info(record.info) do
+  defp encode_record(%Record{} = record, version) do
+    with {:ok, samples} <- encode_samples(record, version),
+         {:ok, info} <- encode_info(record.info, version) do
       fixed = [
         record.chrom,
         Integer.to_string(record.pos),
         encode_list_or_missing(record.ids, ";"),
         record.ref,
         encode_list_or_missing(record.alt, ","),
-        encode_qual(record.qual),
+        encode_qual(record.qual, version),
         encode_filter(record.filter),
         info
       ]
@@ -219,11 +219,11 @@ defmodule VCF.Writer do
     end
   end
 
-  defp encode_samples(%Record{format: [], samples: []}), do: {:ok, []}
+  defp encode_samples(%Record{format: [], samples: []}, _version), do: {:ok, []}
 
-  defp encode_samples(%Record{format: keys, samples: samples}) do
+  defp encode_samples(%Record{format: keys, samples: samples}, version) do
     Enum.reduce_while(samples, {:ok, []}, fn sample, {:ok, encoded} ->
-      case encode_sample(sample, keys) do
+      case encode_sample(sample, keys, version) do
         {:ok, value} -> {:cont, {:ok, [value | encoded]}}
         {:error, error} -> {:halt, {:error, error}}
       end
@@ -234,11 +234,11 @@ defmodule VCF.Writer do
     end
   end
 
-  defp encode_sample(%Sample{values: fields}, keys) do
+  defp encode_sample(%Sample{values: fields}, keys, version) do
     Enum.reduce_while(keys, {:ok, []}, fn key, {:ok, values} ->
       value = fields |> Enum.find(&(&1.key == key)) |> field_value()
 
-      case encode_value(value) do
+      case encode_value(value, version) do
         {:ok, encoded} -> {:cont, {:ok, [encoded | values]}}
         {:error, error} -> {:halt, {:error, error}}
       end
@@ -252,15 +252,15 @@ defmodule VCF.Writer do
   defp field_value(nil), do: nil
   defp field_value(%Field{value: value}), do: value
 
-  defp encode_info([]), do: {:ok, "."}
+  defp encode_info([], _version), do: {:ok, "."}
 
-  defp encode_info(fields) do
+  defp encode_info(fields, version) do
     Enum.reduce_while(fields, {:ok, []}, fn
       %Field{key: key, value: true}, {:ok, encoded} ->
         {:cont, {:ok, [key | encoded]}}
 
       %Field{key: key, value: value}, {:ok, encoded} ->
-        case encode_value(value) do
+        case encode_value(value, version) do
           {:ok, item} -> {:cont, {:ok, [key <> "=" <> item | encoded]}}
           {:error, error} -> {:halt, {:error, error}}
         end
@@ -271,23 +271,27 @@ defmodule VCF.Writer do
     end
   end
 
-  defp encode_value!(value) do
-    {:ok, encoded} = encode_value(value)
+  defp encode_value!(value, version) do
+    {:ok, encoded} = encode_value(value, version)
     encoded
   end
 
-  defp encode_value(nil), do: {:ok, "."}
-  defp encode_value(:nan), do: {:ok, "NaN"}
-  defp encode_value(:positive_infinity), do: {:ok, "Inf"}
-  defp encode_value(:negative_infinity), do: {:ok, "-Inf"}
-  defp encode_value(value) when is_integer(value), do: {:ok, Integer.to_string(value)}
-  defp encode_value(value) when is_float(value), do: {:ok, Float.to_string(value)}
-  defp encode_value(value) when is_binary(value), do: {:ok, value}
+  defp encode_value(nil, _version), do: {:ok, "."}
+  defp encode_value(:nan, _version), do: {:ok, "NaN"}
+  defp encode_value(:positive_infinity, _version), do: {:ok, "Inf"}
+  defp encode_value(:negative_infinity, _version), do: {:ok, "-Inf"}
+  defp encode_value(value, _version) when is_integer(value), do: {:ok, Integer.to_string(value)}
+  defp encode_value(value, _version) when is_float(value), do: {:ok, Float.to_string(value)}
 
-  defp encode_value(values) when is_list(values) do
+  defp encode_value(value, %Version{minor: minor}) when is_binary(value) and minor >= 3,
+    do: {:ok, percent_encode(value, <<>>)}
+
+  defp encode_value(value, _version) when is_binary(value), do: {:ok, value}
+
+  defp encode_value(values, version) when is_list(values) do
     values
     |> Enum.reduce_while({:ok, []}, fn value, {:ok, encoded} ->
-      case encode_value(value) do
+      case encode_value(value, version) do
         {:ok, item} -> {:cont, {:ok, [item | encoded]}}
         {:error, error} -> {:halt, {:error, error}}
       end
@@ -298,16 +302,36 @@ defmodule VCF.Writer do
     end
   end
 
-  defp encode_value(%Genotype{} = genotype), do: Genotype.encode(genotype)
+  defp encode_value(%Genotype{} = genotype, _version), do: Genotype.encode(genotype)
 
-  defp encode_value(value),
+  defp encode_value(value, _version),
     do: {:error, %Error{kind: :encoding_error, value: value, reason: :unsupported_value}}
 
   defp encode_list_or_missing([], _separator), do: "."
   defp encode_list_or_missing(values, separator), do: Enum.join(values, separator)
 
-  defp encode_qual(nil), do: "."
-  defp encode_qual(value), do: encode_value!(value)
+  defp encode_qual(nil, _version), do: "."
+  defp encode_qual(value, version), do: encode_value!(value, version)
+
+  defp percent_encode(<<>>, encoded), do: encoded
+
+  defp percent_encode(<<character, rest::binary>>, encoded) do
+    replacement =
+      case character do
+        ?% -> "%25"
+        ?: -> "%3A"
+        ?; -> "%3B"
+        ?= -> "%3D"
+        ?, -> "%2C"
+        ?\t -> "%09"
+        ?\n -> "%0A"
+        ?\r -> "%0D"
+        ?\s -> "%20"
+        _other -> <<character>>
+      end
+
+    percent_encode(rest, <<encoded::binary, replacement::binary>>)
+  end
 
   defp encode_filter(:pass), do: "PASS"
   defp encode_filter(nil), do: "."

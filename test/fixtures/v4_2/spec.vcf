@@ -1,0 +1,4 @@
+##fileformat=VCFv4.2
+##INFO=<ID=AD,Number=R,Type=Integer,Description="Allele depths",Source="fixture">
+#CHROM	POS	ID	REF	ALT	QUAL	FILTER	INFO
+chr1	2	.	A	C,*	.	PASS	AD=8,3,1
