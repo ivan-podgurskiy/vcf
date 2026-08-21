@@ -1,5 +1,15 @@
 defmodule VCF.Field do
-  @moduledoc "An ordered INFO or sample FORMAT field."
+  @moduledoc """
+  An ordered INFO or sample FORMAT field.
+
+  Fields remain lists so ordering and duplicate source entries are retained.
+
+      iex> fields = [%VCF.Field{key: "DP", value: 8}, %VCF.Field{key: "DP", value: 9}]
+      iex> VCF.Field.get(fields, "DP")
+      8
+      iex> VCF.Field.get_all(fields, "DP")
+      [8, 9]
+  """
 
   @type t :: %__MODULE__{key: String.t(), value: term(), raw: String.t() | nil}
 

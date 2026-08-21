@@ -1,5 +1,19 @@
 defmodule VCF.Genotype do
-  @moduledoc "A typed VCF genotype with arbitrary ploidy and per-allele phasing."
+  @moduledoc """
+  A typed VCF genotype with arbitrary ploidy and per-allele phasing.
+
+  Each phasing entry is the optional separator prefix for the allele at the
+  same position. This losslessly represents ordinary and VCF 4.4 partial
+  phasing.
+
+      iex> {:ok, genotype} = VCF.Genotype.parse("0|1/2")
+      iex> genotype.alleles
+      [0, 1, 2]
+      iex> genotype.phasing
+      [nil, :phased, :unphased]
+      iex> VCF.Genotype.encode(genotype)
+      {:ok, "0|1/2"}
+  """
 
   alias VCF.Error
 

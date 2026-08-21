@@ -1,6 +1,22 @@
 defmodule VCF do
   @moduledoc """
   Parse, validate, stream, transform, and write Variant Call Format files.
+
+  `parse/2` always treats its binary argument as VCF content. Use `read/2` or
+  `stream/2` for paths, caller-owned I/O devices, and binary enumerables.
+
+  ## Quick start
+
+      iex> lines = ["##fileformat=VCFv4.5", "#CHROM\\tPOS\\tID\\tREF\\tALT\\tQUAL\\tFILTER\\tINFO", "chr1\\t10\\t.\\tA\\tC\\t.\\tPASS\\t."]
+      iex> source = Enum.join(lines, <<10>>) <> <<10>>
+      iex> {:ok, document} = VCF.parse(source)
+      iex> [record] = document.records
+      iex> {record.chrom, record.pos, record.filter}
+      {"chr1", 10, :pass}
+
+  Complete-input functions have bang variants that raise `VCF.ParseError`.
+  Lazy bang streams yield records directly; non-bang streams yield tagged
+  results.
   """
 
   @supported_versions ~w(4.1 4.2 4.3 4.4 4.5)
