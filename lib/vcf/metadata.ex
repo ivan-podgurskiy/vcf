@@ -7,10 +7,10 @@ defmodule VCF.Metadata do
   @type t :: %__MODULE__{
           key: String.t(),
           value: value(),
-          raw: String.t(),
+          raw: String.t() | nil,
           line: pos_integer() | nil
         }
 
-  @enforce_keys [:key, :value, :raw]
+  @enforce_keys [:key, :value]
   defstruct [:key, :value, :raw, :line]
 end

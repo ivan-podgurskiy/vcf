@@ -11,6 +11,7 @@ defmodule VCF do
   alias VCF.ParseError
   alias VCF.Stream, as: VCFStream
   alias VCF.Validator
+  alias VCF.Writer
 
   @doc "Returns the supported VCF specification versions."
   @spec supported_versions() :: [String.t()]
@@ -70,6 +71,101 @@ defmodule VCF do
       errors -> {:error, errors}
     end
   end
+
+  @doc "Encodes a document, stream, or header plus records to canonical VCF text."
+  @spec encode(Header.t(), Enumerable.t()) ::
+          {:ok, binary()} | {:error, Error.t() | [Error.t()]}
+  @spec encode(Document.t() | VCFStream.t(), keyword()) ::
+          {:ok, binary()} | {:error, Error.t() | [Error.t()]}
+  def encode(data, options \\ [])
+
+  def encode(%Header{} = header, records), do: Writer.encode(header, records, [])
+  def encode(data, options), do: Writer.encode(data, options)
+
+  @spec encode(Header.t(), Enumerable.t(), keyword()) ::
+          {:ok, binary()} | {:error, Error.t() | [Error.t()]}
+  def encode(%Header{} = header, records, options),
+    do: Writer.encode(header, records, options)
+
+  @doc "Encodes canonical VCF text or raises `VCF.ParseError`."
+  @spec encode!(Header.t(), Enumerable.t()) :: binary()
+  @spec encode!(Document.t() | VCFStream.t(), keyword()) :: binary()
+  def encode!(data, options \\ [])
+
+  def encode!(%Header{} = header, records),
+    do: encode_result!(Writer.encode(header, records, []))
+
+  def encode!(data, options), do: encode_result!(encode(data, options))
+
+  @spec encode!(Header.t(), Enumerable.t(), keyword()) :: binary()
+  def encode!(%Header{} = header, records, options),
+    do: encode_result!(Writer.encode(header, records, options))
+
+  defp encode_result!(result) do
+    case result do
+      {:ok, encoded} -> encoded
+      {:error, [error | _rest]} -> raise ParseError, error
+      {:error, error} -> raise ParseError, error
+    end
+  end
+
+  @doc "Writes a document or stream to a path or I/O device."
+  @spec write(Document.t() | VCFStream.t(), term(), keyword()) ::
+          :ok | {:error, Error.t() | [Error.t()]}
+  @spec write(term(), Document.t() | VCFStream.t(), keyword()) ::
+          :ok | {:error, Error.t() | [Error.t()]}
+  def write(data, destination, options \\ [])
+
+  def write(%Document{} = data, destination, options),
+    do: Writer.write(destination, data, options)
+
+  def write(%VCFStream{} = data, destination, options),
+    do: Writer.write(destination, data, options)
+
+  def write(destination, %Document{} = data, options),
+    do: Writer.write(destination, data, options)
+
+  def write(destination, %VCFStream{} = data, options),
+    do: Writer.write(destination, data, options)
+
+  @spec write(term(), Header.t(), Enumerable.t()) ::
+          :ok | {:error, Error.t() | [Error.t()]}
+  def write(destination, %Header{} = header, records),
+    do: Writer.write(destination, header, records, [])
+
+  @spec write(term(), Header.t(), Enumerable.t(), keyword()) ::
+          :ok | {:error, Error.t() | [Error.t()]}
+  def write(destination, %Header{} = header, records, options),
+    do: Writer.write(destination, header, records, options)
+
+  @doc "Writes a document or stream or raises `VCF.ParseError`."
+  @spec write!(Document.t() | VCFStream.t(), term(), keyword()) :: :ok
+  @spec write!(term(), Document.t() | VCFStream.t(), keyword()) :: :ok
+  def write!(data, destination, options \\ [])
+
+  def write!(%Document{} = data, destination, options),
+    do: write_result!(Writer.write(destination, data, options))
+
+  def write!(%VCFStream{} = data, destination, options),
+    do: write_result!(Writer.write(destination, data, options))
+
+  def write!(destination, %Document{} = data, options),
+    do: write_result!(Writer.write(destination, data, options))
+
+  def write!(destination, %VCFStream{} = data, options),
+    do: write_result!(Writer.write(destination, data, options))
+
+  @spec write!(term(), Header.t(), Enumerable.t()) :: :ok
+  def write!(destination, %Header{} = header, records),
+    do: write_result!(Writer.write(destination, header, records, []))
+
+  @spec write!(term(), Header.t(), Enumerable.t(), keyword()) :: :ok
+  def write!(destination, %Header{} = header, records, options),
+    do: write_result!(Writer.write(destination, header, records, options))
+
+  defp write_result!(:ok), do: :ok
+  defp write_result!({:error, [error | _rest]}), do: raise(ParseError, error)
+  defp write_result!({:error, error}), do: raise(ParseError, error)
 
   defp collect(%VCFStream{} = stream) do
     case Enum.reduce_while(stream, {:ok, []}, fn
