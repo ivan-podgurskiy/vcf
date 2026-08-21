@@ -31,7 +31,7 @@ defmodule VCF.Parser.Header do
         case Version.parse(value) do
           {:ok, version} ->
             metadata = %Metadata{key: "fileformat", value: version, raw: raw, line: line_number}
-            parse_metadata(rest, mode, version, [metadata], [], MapSet.new())
+            parse_metadata(rest, mode, version, [metadata], [], %{})
 
           {:error, error} ->
             {:error, %{error | line: line_number}}
@@ -87,10 +87,10 @@ defmodule VCF.Parser.Header do
         {:ok, [], seen}
 
       identifier ->
-        if MapSet.member?(seen, identifier) do
+        if Map.has_key?(seen, identifier) do
           duplicate_definition(entry, mode, seen)
         else
-          {:ok, [], MapSet.put(seen, identifier)}
+          {:ok, [], Map.put(seen, identifier, true)}
         end
     end
   end

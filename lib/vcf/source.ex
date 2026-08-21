@@ -10,7 +10,7 @@ defmodule VCF.Source do
           value: term(),
           options: keyword(),
           reusable?: boolean(),
-          claim: reference()
+          claim: :atomics.atomics_ref()
         }
 
   @enforce_keys [:kind, :value, :options, :reusable?, :claim]
